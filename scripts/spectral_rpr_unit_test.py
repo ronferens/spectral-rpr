@@ -3,7 +3,7 @@ import pandas as pd
 import argparse
 import numpy as np
 from util.spectral_sync_utils import calc_relative_poses, retrieve_abs_trans_and_rot_mat, gen_exp_rel_trans_mat, \
-    spectral_sync_rot, spectral_sync_trans, __spectral_sync_rot
+    spectral_sync_rot, spectral_sync_trans
 
 # init_notebook_mode(connected=False)
 # cf.go_offline()
