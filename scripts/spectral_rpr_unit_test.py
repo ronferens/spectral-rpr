@@ -101,15 +101,29 @@ if __name__ == '__main__':
             orient_errors.append(orient_err.mean().item())
 
     if args.num_itr > 1:
-        fig = make_subplots(rows=1, cols=2, subplot_titles=('Translation Estimation Error',
-                                                            'Rotation Estimation Error'))
-        fig.add_trace(go.Scatter(x=noise_trans_level, y=position_errors, mode='lines+markers',
-                                 name='Translation Estimation Error'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=noise_rot_level, y=orient_errors, mode='lines+markers',
-                                 name='Rotation Estimation Error'), row=1, col=2)
-        fig.update_layout(title_text="Noise Analysis")
-        fig['layout']['xaxis']['title'] = 'Noise Level [meters]'
-        fig['layout']['xaxis2']['title'] = 'Translation Error [meters]'
-        fig['layout']['yaxis']['title'] = 'Noise Level [degrees]'
-        fig['layout']['yaxis2']['title'] = 'Rotation Error [degrees]'
+        num_bins = 10
+
+        fig = go.Figure()
+        count, bins = np.histogram(noise_trans_level, bins=num_bins)
+        bin_noise_level = np.linspace(0.0, args.noise_trans_level, num=num_bins)
+        for i in range(num_bins - 1):
+            idx = np.where((bins[i] < noise_trans_level) & (noise_trans_level < bins[i + 1]))[0]
+            idx = idx[np.where(idx < len(position_errors))[0]]
+            mean_noise_level = np.max(np.array(noise_trans_level)[idx])
+            fig.add_trace(go.Box(y=np.array(position_errors)[idx], name='{:.6f}'.format(bin_noise_level[i + 1])))
+        fig.update_layout(title_text='Translation Estimation Error',
+                          xaxis_title='Noise level [meters]',
+                          yaxis_title='Translation Estimation Error [meters]')
+        fig.show()
+
+        fig = go.Figure()
+        count, bins = np.histogram(noise_rot_level, bins=num_bins)
+        bin_noise_level = np.linspace(0.0, args.noise_rot_level, num=num_bins)
+        for i in range(num_bins - 1):
+            idx = np.where((bins[i] < noise_rot_level) & (noise_rot_level < bins[i + 1]))[0]
+            idx = idx[np.where(idx < len(orient_errors))[0]]
+            fig.add_trace(go.Box(y=np.array(orient_errors)[idx], name='{:.6f}'.format(bin_noise_level[i + 1])))
+        fig.update_layout(title_text='Rotation Estimation Error',
+                          xaxis_title='Noise level [degrees]',
+                          yaxis_title='Rotation Estimation Error [degrees]')
         fig.show()
