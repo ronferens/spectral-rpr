@@ -139,7 +139,12 @@ def spectral_sync_rot(rel_rot_mat: np.array, abs_rot_mat_ref: np.array) -> np.ar
     # (2) Finding the linear combination of the calculated ev using the known ground-truth
     min_diff = np.Inf
     for i in range(num_imgs - 1):
-        scale_rot_mat = np.linalg.solve(v[(3 * (i + 1)):(3 * (i + 2)), :], abs_rot_mat_ref[(3 * i):(3 * (i + 1)), :])
+        try:
+            scale_rot_mat = np.linalg.solve(v[(3 * (i + 1)):(3 * (i + 2)), :], abs_rot_mat_ref[(3 * i):(3 * (i + 1)), :])
+        except np.linalg.LinAlgError:
+            # Got a Singular matrix error - skipping
+            return None
+
         diff = np.linalg.norm(np.dot(v, scale_rot_mat)[3:, :] - abs_rot_mat_ref)
         if diff < min_diff:
             x = scale_rot_mat
