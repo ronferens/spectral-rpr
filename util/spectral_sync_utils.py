@@ -111,6 +111,7 @@ def spectral_sync_trans(exp_rel_trans_mat: np.array, exp_abs_trans_mat_ref: np.a
         eig_vals, eig_vects = np.linalg.eig(exp_rel_trans_mat[:, :, d])
         eig_vals = np.real(eig_vals)
         v = np.real(eig_vects[:, np.argmin(np.abs(eig_vals - num_imgs))])
+        v = np.abs(v)
 
         # (2) Finding the eigenvector scale based on the know poses of the reference images
         v *= np.median(exp_abs_trans_mat_ref[:, d] / v[1:])
@@ -136,9 +137,15 @@ def spectral_sync_rot(rel_rot_mat: np.array, abs_rot_mat_ref: np.array) -> np.ar
     v = np.real(eig_vects[:, np.argsort(np.abs(eig_vals - num_imgs))[:3]])
 
     # (2) Finding the linear combination of the calculated ev using the known ground-truth
-    est_abs_rot_mat = np.zeros(v.shape)
-    for i in range(3):
-        x = np.linalg.solve(v[-3:, :], abs_rot_mat_ref[-3:, i])
-        est_abs_rot_mat[:, i] = np.dot(v, x)
+    min_diff = np.Inf
+    for i in range(num_imgs - 1):
+        scale_rot_mat = np.linalg.solve(v[(3 * (i + 1)):(3 * (i + 2)), :], abs_rot_mat_ref[(3 * i):(3 * (i + 1)), :])
+        diff = np.linalg.norm(np.dot(v, scale_rot_mat)[3:, :] - abs_rot_mat_ref)
+        if diff < min_diff:
+            x = scale_rot_mat
+            min_diff = diff
+
+    # x = np.median(scale_rot_mat, axis=2)
+    est_abs_rot_mat = np.dot(v, x)
 
     return est_abs_rot_mat
