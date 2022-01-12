@@ -71,7 +71,6 @@ if __name__ == '__main__':
     arg_parser.add_argument('--noise_trans_level', help='The level of translation uncertainty', type=float, default=0.0)
     arg_parser.add_argument('--noise_rot_level', help='The level of rotation uncertainty', type=float, default=0.0)
     arg_parser.add_argument('--num_itr', help='The number of uncertainty tests to run', type=int, default=1)
-    arg_parser.add_argument('--verbose', help='Indicates whether to print results', action='store_true', default=False)
     args = arg_parser.parse_args()
 
     # Extracting the ground-truth poses
@@ -83,9 +82,11 @@ if __name__ == '__main__':
     if args.num_itr == 1:
         noise_trans_level = [args.noise_trans_level]
         noise_rot_level = [args.noise_rot_level]
+        verbose = True
     else:
         noise_trans_level = np.linspace(0.0, args.noise_trans_level, num=args.num_itr)
         noise_rot_level = np.linspace(0.0, args.noise_rot_level, num=args.num_itr)
+        verbose = False
 
     for itr in tqdm(range(args.num_itr)):
 
@@ -116,7 +117,7 @@ if __name__ == '__main__':
                 est_abs_quat_mat[i, :] = transforms3d.quaternions.mat2quat(est_abs_rot_mat[(3 * i):(3 * (i + 1)), :])
             pos_err, orient_err = pose_err(np.hstack((est_abs_trans_mat, est_abs_quat_mat)), gt_poses)
 
-            if args.verbose:
+            if verbose:
                 print('Translation estimation err: {}'.format(trans_pos_est_err))
                 print('Rotation estimation err: {}'.format(rot_pos_est_err))
                 print("Camera pose estimation error: {:.2f}[m], {:.2f}[deg]".format(pos_err.mean().item(),
