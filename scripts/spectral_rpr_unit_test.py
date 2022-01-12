@@ -37,6 +37,31 @@ def add_noise(poses: np.array, trans_sigma: float, rot_sigma: float) -> np.array
     return noisy_poses
 
 
+def plot_pose_err_stats(noise_range: float, applied_noise: np.array, err_vect: list, num_bins: int, title: str,
+                        xlabel: str, ylabel: str) -> None:
+    """
+    Plots the pose (translation or rotation) errors histogram, based on the applied noise level
+    :param noise_range: The range of noise applied during the analysis - [0.0, noise_range]
+    :param applied_noise: The actual random noise levels applied during the analysis
+    :param err_vect: The pose error to analyze
+    :param num_bins: Number of bins to use for the output histogram
+    :param title: Output plot title
+    :param xlabel: Output plot x-axis label
+    :param ylabel: Output plot y-axis label
+    :return: None
+    """
+    fig = go.Figure()
+    count, bins = np.histogram(applied_noise, bins=num_bins)
+    bin_noise_level = np.linspace(0.0,noise_range, num=num_bins)
+    for i in range(num_bins - 1):
+        # idx = np.where((bins[i] < noise_rot_level) & (noise_rot_level < bins[i + 1]))[0]
+        idx = np.where(applied_noise < bins[i + 1])[0]
+        idx = idx[np.where(idx < len(err_vect))[0]]
+        fig.add_trace(go.Box(y=np.array(err_vect)[idx], name='{:.6f}'.format(bin_noise_level[i + 1]), boxpoints=False))
+    fig.update_layout(title_text=title, xaxis_title=xlabel, yaxis_title=ylabel)
+    fig.show()
+
+
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('input_file', help='Path to the dataset file')
@@ -103,28 +128,10 @@ if __name__ == '__main__':
     if args.num_itr > 1:
         num_bins = 10
 
-        fig = go.Figure()
-        count, bins = np.histogram(noise_trans_level, bins=num_bins)
-        bin_noise_level = np.linspace(0.0, args.noise_trans_level, num=num_bins)
-        for i in range(num_bins - 1):
-            # idx = np.where((bins[i] < noise_trans_level) & (noise_trans_level < bins[i + 1]))[0]
-            idx = np.where(noise_trans_level < bins[i + 1])[0]
-            idx = idx[np.where(idx < len(position_errors))[0]]
-            fig.add_trace(go.Box(y=np.array(position_errors)[idx], name='{:.6f}'.format(bin_noise_level[i + 1])))
-        fig.update_layout(title_text='Translation Estimation Error',
-                          xaxis_title='Noise level [meters]',
-                          yaxis_title='Translation Estimation Error [meters]')
-        fig.show()
+        plot_pose_err_stats(args.noise_trans_level, noise_trans_level, position_errors, num_bins,
+                            title='Translation Estimation Error - {}-NN'.format(num_of_imgs - 1),
+                            xlabel='Noise level [meters]', ylabel='Translation Estimation Error [meters]')
 
-        fig = go.Figure()
-        count, bins = np.histogram(noise_rot_level, bins=num_bins)
-        bin_noise_level = np.linspace(0.0, args.noise_rot_level, num=num_bins)
-        for i in range(num_bins - 1):
-            # idx = np.where((bins[i] < noise_rot_level) & (noise_rot_level < bins[i + 1]))[0]
-            idx = np.where(noise_rot_level < bins[i + 1])[0]
-            idx = idx[np.where(idx < len(orient_errors))[0]]
-            fig.add_trace(go.Box(y=np.array(orient_errors)[idx], name='{:.6f}'.format(bin_noise_level[i + 1])))
-        fig.update_layout(title_text='Rotation Estimation Error',
-                          xaxis_title='Noise level [degrees]',
-                          yaxis_title='Rotation Estimation Error [degrees]')
-        fig.show()
+        plot_pose_err_stats(args.noise_rot_level, noise_rot_level, orient_errors, num_bins,
+                            title='Rotation Estimation Error - {}-NN'.format(num_of_imgs - 1),
+                            xlabel='Noise level [degrees]', ylabel='Rotation Estimation Error [degrees]')
