@@ -3,6 +3,8 @@ import typing
 import transforms3d as t3d
 from itertools import permutations
 
+import transforms3d.quaternions
+
 
 def quaternion_to_mat(q: t3d.quaternions) -> np.array:
     """
@@ -25,6 +27,20 @@ def calc_rel_rot_mat(rot_mat1: np.array, rot_mat2: np.array) -> np.array:
     return rel_rot_mat_12
 
 
+def calc_rel_rot_quat(rot_quat1: np.array, rot_quat2: np.array) -> np.array:
+    """
+    Calculates the relative rotation matrix between the 1st and 2nd rotation matrices
+    :param rot_quat1: 1st quaternion
+    :param rot_quat2: 2nd quaternion
+    :return: A relative rotation quaternion (rotating from 2nd to 1st)
+    """
+    rot_mat_i = quaternion_to_mat(rot_quat1)
+    rot_mat_j = quaternion_to_mat(rot_quat2)
+    rel_rot_mat_ij = calc_rel_rot_mat(rot_mat_i, rot_mat_j)
+    rel_rot_quat = transforms3d.quaternions.mat2quat(rel_rot_mat_ij)
+    return rel_rot_quat
+
+
 def calc_rel_translation(trans1: np.array, trans2: np.array):
     """
     Calculate the relative translation between the 1st and 2nd positions
@@ -34,6 +50,36 @@ def calc_rel_translation(trans1: np.array, trans2: np.array):
     """
     rel_trans_12 = trans1 - trans2
     return rel_trans_12
+
+
+def assign_relative_poses(rel_est_trans: np.array, rel_est_orientation: np.array) -> typing.Tuple[np.array, np.array]:
+    """
+    Assign the given relative translation and angular rotation
+    :param rel_est_trans: An Nx3 matrix containing relative translation estimation
+    :param rel_est_orientation: An Nx3 matrix containing relative angular estimation
+    :return: An Nx3 relative translation matrix and (NX3)X3 relative angular rotation matrix
+    """
+    num_poses = rel_est_trans.shape[0] + 1
+    rel_trans_mat = np.zeros((num_poses, num_poses, 3))
+    rel_rot_mat = np.zeros((3 * num_poses, 3 * num_poses))
+
+    # Generating the relative translation and relative angular rotation
+    for i in range(num_poses):
+        for j in range(i, num_poses):
+            if i == j:
+                rel_trans_mat[i, j, :] = 1
+                rel_rot_mat[(3 * i):(3 * (i + 1)), (3 * j):(3 * (j + 1))] = np.eye(3)
+            else:
+                # Calculating the relative translation
+                rel_trans_mat[i, j, :] = rel_est_trans[(j - 1), :]
+                rel_trans_mat[j, i, :] = -1 * rel_est_trans[(j - 1), :]
+
+                # Calculating the relative rotation matrices
+                rel_rot_mat_query_to_j = quaternion_to_mat(rel_est_orientation[(j - 1), :])
+                rel_rot_mat[(3 * i):(3 * (i + 1)), (3 * j):(3 * (j + 1))] = rel_rot_mat_query_to_j
+                rel_rot_mat[(3 * j):(3 * (j + 1)), (3 * i):(3 * (i + 1))] = np.linalg.inv(rel_rot_mat_query_to_j)
+
+    return rel_trans_mat, rel_rot_mat
 
 
 def calc_relative_poses(abs_poses: np.array) -> typing.Tuple[np.array, np.array]:
@@ -99,7 +145,7 @@ def spectral_sync_trans(exp_rel_trans_mat: np.array, exp_abs_trans_mat_ref: np.a
     """
     Calculate the absolute translation using spectral synchronization
     :param exp_rel_trans_mat: An NxN exponential relative translation matrix
-    :param exp_abs_trans_mat_ref: An (N-1)X3 exponential absolute translation matrix of the reference images
+    :param exp_abs_trans_mat_ref: An NX3 exponential absolute translation matrix of the reference images
     :return: An NxN matrix estimated absolute translation
     """
     num_imgs = exp_rel_trans_mat.shape[0]
@@ -114,7 +160,7 @@ def spectral_sync_trans(exp_rel_trans_mat: np.array, exp_abs_trans_mat_ref: np.a
         v = np.abs(v)
 
         # (2) Finding the eigenvector scale based on the know poses of the reference images
-        v *= np.median(exp_abs_trans_mat_ref[:, d] / v[1:])
+        v *= np.mean(exp_abs_trans_mat_ref[1:, d] / v[1:])
 
         # (3) Calculate the estimated absolute translation based on the extracted eigenvalue
         est_abs_trans[:, d] = np.log(v)
@@ -134,23 +180,33 @@ def spectral_sync_rot(rel_rot_mat: np.array, abs_rot_mat_ref: np.array) -> np.ar
     # (1) Extract the eigenvectors and eigenvalues of the relative rotation matrix
     eig_vals, eig_vects = np.linalg.eig(rel_rot_mat)
     eig_vals = np.real(eig_vals)
-    v = np.real(eig_vects[:, np.argsort(np.abs(eig_vals - num_imgs))[:3]])
+    v = np.real(eig_vects[:, np.argsort(np.abs(eig_vals - num_imgs))])[:, :3]
 
     # (2) Finding the linear combination of the calculated ev using the known ground-truth
     min_diff = np.Inf
-    for i in range(num_imgs - 1):
+
+    for i in range(1, num_imgs):
         try:
-            scale_rot_mat = np.linalg.solve(v[(3 * (i + 1)):(3 * (i + 2)), :], abs_rot_mat_ref[(3 * i):(3 * (i + 1)), :])
+            scale_rot_mat = np.linalg.solve(v[(3 * i):(3 * (i + 1)), :],
+                                            abs_rot_mat_ref[(3 * i):(3 * (i + 1)), :])
         except np.linalg.LinAlgError:
             # Got a Singular matrix error - skipping
             return None
 
-        diff = np.linalg.norm(np.dot(v, scale_rot_mat)[3:, :] - abs_rot_mat_ref)
+        itr_abs_rot_mat = np.dot(v, scale_rot_mat)
+        diff = np.linalg.norm(itr_abs_rot_mat[3:, :] - abs_rot_mat_ref[3:, :])
         if diff < min_diff:
             x = scale_rot_mat
             min_diff = diff
 
-    # x = np.median(scale_rot_mat, axis=2)
+    # (3) Calculating the estimated rotation matrix
     est_abs_rot_mat = np.dot(v, x)
+
+    # # Normalizing the estimated rotation matrix
+    # u, s, vh = np.linalg.svd(est_abs_rot_mat, full_matrices=True)
+    # s_norm = s / np.linalg.norm(s)
+    # smat = np.zeros((18, 3), dtype=complex)
+    # smat[:3, :3] = np.diag(s_norm)
+    # est_abs_rot_mat_norm = np.dot(u, np.dot(smat, vh))
 
     return est_abs_rot_mat

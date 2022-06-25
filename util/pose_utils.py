@@ -34,6 +34,11 @@ def pose_err(est_pose, gt_pose):
     est_pose = torch.Tensor(est_pose)
     gt_pose = torch.Tensor(gt_pose)
 
+    if len(est_pose.shape) == 1:
+        est_pose = est_pose.reshape(1, -1)
+    if len(gt_pose.shape) == 1:
+        gt_pose = gt_pose.reshape(1, -1)
+
     posit_err = torch.norm(est_pose[:, 0:3] - gt_pose[:, 0:3], dim=1)
     est_pose_q = F.normalize(est_pose[:, 3:], p=2, dim=1)
     gt_pose_q = F.normalize(gt_pose[:, 3:], p=2, dim=1)

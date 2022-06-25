@@ -20,20 +20,26 @@ def add_noise(poses: np.array, trans_sigma: float, rot_sigma: float) -> np.array
     :param rot_sigma: Rotational noise level [degrees]
     :return: Noisy Nx7 poses
     """
-    noisy_poses = np.zeros(poses.shape) + poses
-    num_imgs = poses.shape[0]
+    noisy_poses = poses.copy()
 
     # Adding translational noise by shifting the given XYZ coordinates
-    noisy_poses[:, :3] += np.random.random(size=(num_imgs, 3)) * trans_sigma
+    if trans_sigma != 0.0:
+        noisy_poses[0, :3] += np.random.random(3) * trans_sigma
 
     # Adding rotational noise by rotating the given quaternion
     if rot_sigma != 0.0:
-        for i in range(num_imgs):
-            ai, aj, ak = np.random.random(size=3) * rot_sigma
-            rot_mat = transforms3d.euler.euler2mat(ai, aj, ak)
-            pose_rot_mat = transforms3d.quaternions.quat2mat(poses[i, 3:])
-            noisy_rot_mat = np.dot(rot_mat, pose_rot_mat)
-            noisy_poses[i, 3:] = transforms3d.quaternions.mat2quat(noisy_rot_mat)
+        # Option #1 - Adding noise by rotating the query image's quaternion
+        # factor = np.sin(rot_sigma / 2.0)
+        # noisy_poses[0, -1] = np.cos(rot_sigma / 2.0)
+        # noisy_poses[0, 3:-1] = poses[0, 3:-1] * factor
+        # noisy_poses[0, 3:] = noisy_poses[0, 3:] / np.linalg.norm(noisy_poses[0, 3:])
+
+        # Option #2 - Adding noise by creating noisy rotation matrix
+        ai, aj, ak = np.random.random(3) * rot_sigma * np.pi / 180
+        rot_mat = transforms3d.euler.euler2mat(ai, aj, ak)
+        pose_rot_mat = transforms3d.quaternions.quat2mat(poses[0, 3:])
+        noisy_rot_mat = np.dot(rot_mat, pose_rot_mat)
+        noisy_poses[0, 3:] = transforms3d.quaternions.mat2quat(noisy_rot_mat)
     return noisy_poses
 
 
@@ -52,12 +58,12 @@ def plot_pose_err_stats(noise_range: float, applied_noise: np.array, err_vect: l
     """
     fig = go.Figure()
     count, bins = np.histogram(applied_noise, bins=num_bins)
-    bin_noise_level = np.linspace(0.0,noise_range, num=num_bins)
+    bin_noise_level = np.linspace(0.0, noise_range, num=num_bins)
     for i in range(num_bins - 1):
         # idx = np.where((bins[i] < noise_rot_level) & (noise_rot_level < bins[i + 1]))[0]
         idx = np.where(applied_noise < bins[i + 1])[0]
         idx = idx[np.where(idx < len(err_vect))[0]]
-        fig.add_trace(go.Box(y=np.array(err_vect)[idx], name='{:.6f}'.format(bin_noise_level[i + 1]), boxpoints=False))
+        fig.add_trace(go.Box(y=np.array(err_vect)[idx], name='{:.1f}'.format(bin_noise_level[i + 1]), boxpoints=False))
     fig.update_layout(title_text=title, xaxis_title=xlabel, yaxis_title=ylabel)
     fig.show()
 
@@ -105,26 +111,18 @@ if __name__ == '__main__':
         exp_abs_trans_mat = np.exp(abs_trans_mat)
 
         # Run spectral sync
-        est_abs_trans_mat = spectral_sync_trans(exp_rel_trans_mat, exp_abs_trans_mat[1:, :])
-        est_abs_rot_mat = spectral_sync_rot(rel_rot_mat, abs_rot_mat[3:, :])
+        est_abs_trans_mat = spectral_sync_trans(exp_rel_trans_mat, exp_abs_trans_mat)
+        est_abs_rot_mat = spectral_sync_rot(rel_rot_mat, abs_rot_mat)
 
         if est_abs_trans_mat is not None and est_abs_rot_mat is not None:
-            trans_pos_est_err = np.mean(np.linalg.norm(est_abs_trans_mat - abs_trans_mat))
-            rot_pos_est_err = np.mean(np.linalg.norm(est_abs_rot_mat - abs_rot_mat))
-
-            est_abs_quat_mat = np.zeros((num_of_imgs, 4))
-            for i in range(num_of_imgs):
-                est_abs_quat_mat[i, :] = transforms3d.quaternions.mat2quat(est_abs_rot_mat[(3 * i):(3 * (i + 1)), :])
-            pos_err, orient_err = pose_err(np.hstack((est_abs_trans_mat, est_abs_quat_mat)), gt_poses)
+            est_abs_quat_mat = transforms3d.quaternions.mat2quat(est_abs_rot_mat[:3, :])
+            pos_err, orient_err = pose_err(np.hstack((est_abs_trans_mat[0, :], est_abs_quat_mat)), gt_poses[0, :])
 
             if verbose:
-                print('Translation estimation err: {}'.format(trans_pos_est_err))
-                print('Rotation estimation err: {}'.format(rot_pos_est_err))
-                print("Camera pose estimation error: {:.2f}[m], {:.2f}[deg]".format(pos_err.mean().item(),
-                                                                                    orient_err.mean().item()))
+                print("Estimation Error: {:.2f}[m], {:.2f}[deg]".format(pos_err.item(), orient_err.item()))
 
-            position_errors.append(pos_err.mean().item())
-            orient_errors.append(orient_err.mean().item())
+            position_errors.append(pos_err.item())
+            orient_errors.append(orient_err.item())
 
     if args.num_itr > 1:
         num_bins = 10

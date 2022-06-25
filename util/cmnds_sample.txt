@@ -1,0 +1,11 @@
+###########################################################
+# main_spectral_rpr_unit_test.py
+###########################################################
+/home/ronf/git/spectral-rpr/datasets/CambridgeLandmarks/abs_cambridge_pose_sorted.csv_KingsCollege_train.csv
+3
+--noise_trans_level
+1
+--noise_rot_level
+0.5
+--num_itr
+10000
