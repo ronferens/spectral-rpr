@@ -3,7 +3,8 @@ import transforms3d as t3d
 import torch
 import torch.nn.functional as F
 
-def calc_rel_rot_mat(rot_mat1, rot_mat2):
+
+def calc_rel_rot_mat(rot_mat1: np.array, rot_mat2: np.array) -> np.array:
     """
     Calculates the relative rotation matrix
     """
@@ -12,7 +13,7 @@ def calc_rel_rot_mat(rot_mat1, rot_mat2):
     return rel_rot_mat_12
 
 
-def calc_rel_trans(trans1, trans2):
+def calc_rel_trans(trans1: np.array, trans2: np.array) -> np.array:
     """
     Calculate the relative translation
     """
@@ -24,7 +25,7 @@ def quat_to_mat(q):
     return t3d.quaternions.quat2mat(q / np.linalg.norm(q))
 
 
-def pose_err(est_pose, gt_pose):
+def pose_err(est_pose: torch.Tensor, gt_pose: torch.Tensor) -> np.array:
     """
     Calculate the position and orientation error given the estimated and ground truth pose(s
     :param est_pose: (torch.Tensor) a batch of estimated poses (Nx7, N is the batch size)
@@ -39,11 +40,10 @@ def pose_err(est_pose, gt_pose):
     if len(gt_pose.shape) == 1:
         gt_pose = gt_pose.reshape(1, -1)
 
-    posit_err = torch.norm(est_pose[:, 0:3] - gt_pose[:, 0:3], dim=1)
+    posit_err = torch.norm(est_pose[:, :3] - gt_pose[:, :3], dim=1)
     est_pose_q = F.normalize(est_pose[:, 3:], p=2, dim=1)
     gt_pose_q = F.normalize(gt_pose[:, 3:], p=2, dim=1)
     inner_prod = torch.bmm(est_pose_q.view(est_pose_q.shape[0], 1, est_pose_q.shape[1]),
                            gt_pose_q.view(gt_pose_q.shape[0], gt_pose_q.shape[1], 1))
-    orient_err = 2 * torch.nan_to_num(torch.acos(torch.abs(inner_prod))) * 180 / np.pi
+    orient_err = 2 * torch.acos(torch.abs(inner_prod)) * 180 / np.pi
     return posit_err, orient_err
-

@@ -21,10 +21,6 @@ def process_rel_pose_est(rel_est_pose_filepath: str) -> typing.Tuple[np.array, n
     rel_trans = np.float_(rel_est_data[['rel_est_t1', 'rel_est_t2', 'rel_est_t3']].values)
     rel_orientation = np.float_(rel_est_data[['rel_est_q1', 'rel_est_q2', 'rel_est_q3', 'rel_est_q4']].values)
 
-    # Normalizing the quaternions
-    for i in range(rel_orientation.shape[0]):
-        rel_orientation[i, 3:] = rel_orientation[i, 3:] / np.linalg.norm(rel_orientation[i, 3:])
-
     assert rel_trans.shape[0] == SEVEN_SCENE_NUM_ENTRIES, 'Wrong number of ground-truth entries'
 
     return rel_trans, rel_orientation
@@ -34,18 +30,7 @@ def process_gt_abs_poses(gt_pose_filepath: str) -> typing.Tuple[typing.List, typ
     columns = ['query_path', 'ref_path', 'idx0', 'idx1', 'idx2', 'q_t1', 'q_t2', 'q_t3', 'q_q1', 'q_q2', 'q_q3', 'q_q4',
                'ref_t1', 'ref_t2', 'ref_t3', 'ref_q1', 'ref_q2', 'ref_q3', 'ref_q4']
     gt_data = pd.read_csv(gt_pose_filepath, names=columns, delim_whitespace=True)
-    q_imgs = gt_data['query_path']
-    r_imgs = gt_data['ref_path']
-    q_abs_poses = np.float_(gt_data[['q_t1', 'q_t2', 'q_t3', 'q_q1', 'q_q2', 'q_q3', 'q_q4']].values)
-    ref_abs_poses = np.float_(gt_data[['ref_t1', 'ref_t2', 'ref_t3', 'ref_q1', 'ref_q2', 'ref_q3', 'ref_q4']].values)
-
-    # Normalizing the quaternions
-    for i in range(ref_abs_poses.shape[0]):
-        ref_abs_poses[i, 3:] = ref_abs_poses[i, 3:] / np.linalg.norm(ref_abs_poses[i, 3:])
-
-    assert q_abs_poses.shape[0] == SEVEN_SCENE_NUM_ENTRIES, 'Wrong number of ground-truth entries'
-
-    return q_imgs, r_imgs, q_abs_poses, ref_abs_poses
+    return gt_data
 
 
 if __name__ == "__main__":
@@ -58,7 +43,7 @@ if __name__ == "__main__":
     logging.info("Processing 7-Scene relative estimations from - {}".format(args.rel_pose_file))
 
     # Retrieving the ground-truth poses
-    query_list, ref_list, query_abs_poses, ref_abs_poses = process_gt_abs_poses(args.seven_scenes_gt_file)
+    gt_data = process_gt_abs_poses(args.seven_scenes_gt_file)
 
     # Retrieving the input relative pose estimation
     rel_est_trans, rel_est_orientation = process_rel_pose_est(args.rel_pose_file)
@@ -72,9 +57,10 @@ if __name__ == "__main__":
         # Retrieving Ground-Truth Poses
         # ====================================================
         # Retrieving the absolute pose of the query image
-        gt_poses[0, :] = query_abs_poses[idx, :]
+        gt_poses[0, :] = gt_data[['q_t1', 'q_t2', 'q_t3', 'q_q1', 'q_q2', 'q_q3', 'q_q4']].iloc[idx].values
         # Retrieving the absolute pose of the reference images
-        gt_poses[1:, :] = ref_abs_poses[idx:(idx + SEVEN_SCENE_NUM_REFS), :]
+        gt_poses[1:, :] = gt_data[['ref_t1', 'ref_t2', 'ref_t3', 'ref_q1', 'ref_q2', 'ref_q3', 'ref_q4']].iloc[
+                          idx:(idx + SEVEN_SCENE_NUM_REFS)].values
 
         # Creating the absolute poses matrices
         abs_trans_mat, abs_rot_mat = retrieve_abs_trans_and_rot_mat(gt_poses)
@@ -89,23 +75,22 @@ if __name__ == "__main__":
         # Adding the relative poses between the reference images and the query image (network's relative estimation)
         rel_trans_mat = np.hstack([np.ones((SEVEN_SCENE_NUM_REFS, 1, 3)), rel_trans_mat])
         rel_trans_mat = np.vstack([np.ones((1, SEVEN_SCENE_NUM_REFS + 1, 3)), rel_trans_mat])
-        rel_trans_mat[0, 1:] = -1 * rel_est_trans[idx:(idx + SEVEN_SCENE_NUM_REFS), :]
-        rel_trans_mat[1:, 0, :] = rel_est_trans[idx:(idx + SEVEN_SCENE_NUM_REFS), :]
+        for i in range(3):
+            rel_trans_mat[0, 1:, i] = rel_est_trans[idx:(idx + SEVEN_SCENE_NUM_REFS), :][:, i]
+            rel_trans_mat[1:, 0, i] = -1 * rel_est_trans[idx:(idx + SEVEN_SCENE_NUM_REFS), :][:, i]
 
         rel_rot_mat = np.hstack([np.ones((SEVEN_SCENE_NUM_REFS * 3, 3)), rel_rot_mat])
         rel_rot_mat = np.vstack([np.ones((3, (3 * (SEVEN_SCENE_NUM_REFS + 1)))), rel_rot_mat])
         for i in range(1, (SEVEN_SCENE_NUM_REFS + 1)):
-            q_to_ref_rel_quaternion = rel_est_orientation[idx + (i - 1), :]
-            q_to_ref_rel_quaternion = q_to_ref_rel_quaternion / np.linalg.norm(q_to_ref_rel_quaternion)
-            rel_rot_mat[:3, (3 * i):(3 * (i + 1))] = np.linalg.inv(quaternion_to_mat(q_to_ref_rel_quaternion))
-            rel_rot_mat[(3 * i):(3 * (i + 1)), :3] = quaternion_to_mat(q_to_ref_rel_quaternion)
-        rel_rot_mat[:3, :3] = np.eye(3)
+            # quat = rel_est_orientation[idx + (i - 1), :]
+            # quat_norm = quat / np.linalg.norm(quat)
+            # rel_rot_mat[:3, (3 * i):(3 * (i + 1))] = quaternion_to_mat(quat_norm)
+            # rel_rot_mat[(3 * i):(3 * (i + 1)), :3] = np.linalg.inv(quaternion_to_mat(quat_norm))
 
-        ## DEBUG DEBUG DEBUG DEBUG DEBUG ###
-        gt_rel_trans_mat, gt_rel_rot_mat = calc_relative_poses(gt_poses)
-        rel_trans_mat[2, :] = gt_rel_trans_mat[2, :]
-        # rel_rot_mat = gt_rel_rot_mat
-        ## DEBUG DEBUG DEBUG DEBUG DEBUG ###
+            rel_rot_mat[:3, (3 * i):(3 * (i + 1))] = quaternion_to_mat(rel_est_orientation[idx + (i - 1), :])
+            rel_rot_mat[(3 * i):(3 * (i + 1)), :3] = np.linalg.inv(quaternion_to_mat(rel_est_orientation[idx + (i - 1), :]))
+
+        rel_rot_mat[:3, :3] = np.eye(3)
 
         exp_rel_trans_mat = gen_exp_rel_trans_mat(rel_trans_mat)
 
@@ -131,13 +116,24 @@ if __name__ == "__main__":
             position_errors.append(pos_err.item())
             orientation_errors.append(orient_err.item())
 
-    scene_ranges = [0, 2000, 6000, 8000, 9000, 10000, 15000, 17000]
-    scenes = ['fire', 'office', 'chess', 'heads', 'stairs', 'redkitchen', 'pumpkin']
+    # ====================================================
+    # Evaluation
+    # ====================================================
+    scene_ranges = {'chess': [6000, 8000],
+                    'fire': [0, 2000],
+                    'heads': [8000, 9000],
+                    'office': [2000, 6000],
+                    'pumpkin': [15000, 17000],
+                    'redkitchen': [10000, 15000],
+                    'stairs': [9000, 10000]
+                    }
+    scenes = ['chess', 'fire', 'heads', 'office', 'pumpkin', 'redkitchen', 'stairs']
     trans_pos_est_err = []
     rot_pos_est_err = []
-    for idx, scene in enumerate(scenes):
-        if scene_ranges[idx] < len(position_errors):
-            trans_pos_est_err.append(np.median(position_errors[scene_ranges[idx]:scene_ranges[idx+1]]))
-            rot_pos_est_err.append(np.median(orientation_errors[scene_ranges[idx]:scene_ranges[idx + 1]]))
-            print("Scene {}: {:.2f}[m], {:.2f}[deg]".format(scene, trans_pos_est_err[-1], rot_pos_est_err[-1]))
+    for s in scenes:
+        idx_start = scene_ranges[s][0]
+        idx_end = scene_ranges[s][1]
+        trans_pos_est_err.append(np.median(position_errors[idx_start:idx_end]))
+        rot_pos_est_err.append(np.median(orientation_errors[idx_start:idx_end]))
+        print("Scene {}: {:.2f}[m], {:.2f}[deg]".format(s, trans_pos_est_err[-1], rot_pos_est_err[-1]))
     print("Average: {:.2f}[m], {:.2f}[deg]".format(np.mean(trans_pos_est_err), np.mean(rot_pos_est_err)))
