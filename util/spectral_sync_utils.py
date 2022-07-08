@@ -123,7 +123,7 @@ def retrieve_abs_trans_and_rot_mat(poses: np.array) -> typing.Tuple[np.array, np
     abs_rot_mat = np.zeros((num_of_poses * 3, 3))
     for i, p in enumerate(poses):
         abs_trans_mat[i, :] = p[:3]
-        abs_rot_mat[(3 * i):(3 * (i + 1)), :] = quaternion_to_mat(p[3:])
+        abs_rot_mat[(3 * i):(3 * (i + 1)), :] = quaternion_to_mat(p[3:] / np.linalg.norm(p[3:]))
     return abs_trans_mat, abs_rot_mat
 
 
