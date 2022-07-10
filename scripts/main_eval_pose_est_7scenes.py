@@ -6,7 +6,7 @@ from util import utils
 import typing
 from tqdm import tqdm
 from util.spectral_sync_utils import quaternion_to_mat, gen_exp_rel_trans_mat, spectral_sync_rot, spectral_sync_trans, \
-    assign_relative_poses, retrieve_abs_trans_and_rot_mat, calc_relative_poses, calc_rel_rot_quat, calc_rel_translation
+    retrieve_abs_trans_and_rot_mat, calc_relative_poses, normalize_quaternion
 from util.pose_utils import pose_err
 import transforms3d
 import pandas as pd
@@ -82,13 +82,9 @@ if __name__ == "__main__":
         rel_rot_mat = np.hstack([np.ones((SEVEN_SCENE_NUM_REFS * 3, 3)), rel_rot_mat])
         rel_rot_mat = np.vstack([np.ones((3, (3 * (SEVEN_SCENE_NUM_REFS + 1)))), rel_rot_mat])
         for i in range(1, (SEVEN_SCENE_NUM_REFS + 1)):
-            # quat = rel_est_orientation[idx + (i - 1), :]
-            # quat_norm = quat / np.linalg.norm(quat)
-            # rel_rot_mat[:3, (3 * i):(3 * (i + 1))] = quaternion_to_mat(quat_norm)
-            # rel_rot_mat[(3 * i):(3 * (i + 1)), :3] = np.linalg.inv(quaternion_to_mat(quat_norm))
-
-            rel_rot_mat[:3, (3 * i):(3 * (i + 1))] = quaternion_to_mat(rel_est_orientation[idx + (i - 1), :])
-            rel_rot_mat[(3 * i):(3 * (i + 1)), :3] = np.linalg.inv(quaternion_to_mat(rel_est_orientation[idx + (i - 1), :]))
+            quat = normalize_quaternion(rel_est_orientation[idx + (i - 1), :])
+            rel_rot_mat[:3, (3 * i):(3 * (i + 1))] = quaternion_to_mat(quat)
+            rel_rot_mat[(3 * i):(3 * (i + 1)), :3] = np.linalg.inv(quaternion_to_mat(quat))
 
         rel_rot_mat[:3, :3] = np.eye(3)
 

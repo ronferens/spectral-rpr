@@ -1,9 +1,16 @@
+import math
+
 import numpy as np
 import typing
 import transforms3d as t3d
-from itertools import permutations
 
-import transforms3d.quaternions
+
+def normalize_quaternion(v, tolerance=0.00001):
+    mag2 = sum(n * n for n in v)
+    if mag2 > tolerance:
+        mag = math.sqrt(mag2)
+        v = tuple(n / mag for n in v)
+    return np.array(v)
 
 
 def quaternion_to_mat(q: t3d.quaternions) -> np.array:
@@ -12,7 +19,7 @@ def quaternion_to_mat(q: t3d.quaternions) -> np.array:
     :param q: A 4-element quaternion array
     :return: A 3x3 rotation matrix
     """
-    return t3d.quaternions.quat2mat(q / np.linalg.norm(q))
+    return t3d.quaternions.quat2mat(normalize_quaternion(q))
 
 
 def calc_rel_rot_mat(rot_mat_i: np.array, rot_mat_j: np.array) -> np.array:
@@ -37,7 +44,7 @@ def calc_rel_rot_quat(rot_quat_i: np.array, rot_quat_j: np.array) -> np.array:
     rot_mat_i = quaternion_to_mat(rot_quat_i)
     rot_mat_j = quaternion_to_mat(rot_quat_j)
     rel_rot_mat_ij = calc_rel_rot_mat(rot_mat_i, rot_mat_j)
-    rel_rot_quat_ij = transforms3d.quaternions.mat2quat(rel_rot_mat_ij)
+    rel_rot_quat_ij = t3d.quaternions.mat2quat(rel_rot_mat_ij)
     return rel_rot_quat_ij
 
 
@@ -75,8 +82,7 @@ def assign_relative_poses(rel_est_trans: np.array, rel_est_orientation: np.array
                 rel_trans_mat[j, i, :] = -1 * rel_est_trans[(j - 1), :]
 
                 # Calculating the relative rotation matrices
-                quat_query_to_j = rel_est_orientation[(j - 1), :]
-                quat_query_to_j = quat_query_to_j / np.linalg.norm(quat_query_to_j)
+                quat_query_to_j = normalize_quaternion(rel_est_orientation[(j - 1), :])
                 rel_rot_mat_query_to_j = quaternion_to_mat(quat_query_to_j)
                 rel_rot_mat[(3 * i):(3 * (i + 1)), (3 * j):(3 * (j + 1))] = rel_rot_mat_query_to_j
                 rel_rot_mat[(3 * j):(3 * (j + 1)), (3 * i):(3 * (i + 1))] = np.linalg.inv(rel_rot_mat_query_to_j)
@@ -104,8 +110,8 @@ def calc_relative_poses(abs_poses: np.array) -> typing.Tuple[np.array, np.array]
                 rel_trans_mat[i, j, :] = calc_rel_translation(pi[:3], pj[:3])
 
                 # Calculating the relative rotation matrices
-                rot_mat_i = quaternion_to_mat(pi[3:] / np.linalg.norm(pi[3:]))
-                rot_mat_j = quaternion_to_mat(pj[3:] / np.linalg.norm(pj[3:]))
+                rot_mat_i = quaternion_to_mat(normalize_quaternion(pi[3:]))
+                rot_mat_j = quaternion_to_mat(normalize_quaternion(pj[3:]))
                 rel_rot_mat_ij = calc_rel_rot_mat(rot_mat_i, rot_mat_j)
                 rel_rot_mat[(3 * i):(3 * (i + 1)), (3 * j):(3 * (j + 1))] = rel_rot_mat_ij
 
@@ -123,7 +129,7 @@ def retrieve_abs_trans_and_rot_mat(poses: np.array) -> typing.Tuple[np.array, np
     abs_rot_mat = np.zeros((num_of_poses * 3, 3))
     for i, p in enumerate(poses):
         abs_trans_mat[i, :] = p[:3]
-        abs_rot_mat[(3 * i):(3 * (i + 1)), :] = quaternion_to_mat(p[3:] / np.linalg.norm(p[3:]))
+        abs_rot_mat[(3 * i):(3 * (i + 1)), :] = quaternion_to_mat(normalize_quaternion(p[3:]))
     return abs_trans_mat, abs_rot_mat
 
 
@@ -191,9 +197,8 @@ def spectral_sync_rot(rel_rot_mat: np.array, abs_rot_mat_ref: np.array) -> np.ar
                               abs_rot_mat_ref[(3 * (i + 1)):, i], rcond=None)[0]
         est_abs_rot_mat[:, i] = np.dot(v, res)
 
-    # u, s, vh = np.linalg.svd(est_abs_rot_mat[:3, :3], full_matrices=True)
-    # s = s / np.linalg.norm(s)
-    # smat = np.diag(s)
-    # est_abs_rot_mat[:3, :3] = np.dot(u, np.dot(smat, vh))
+    u, s, vh = np.linalg.svd(est_abs_rot_mat[:3, :3], full_matrices=True)
+    smat = np.diag(s)
+    est_abs_rot_mat[:3, :3] = np.dot(u, np.dot(smat, vh))
 
     return est_abs_rot_mat
